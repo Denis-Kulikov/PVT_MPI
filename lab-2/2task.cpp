@@ -1,45 +1,56 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
+#include <iostream>
+#include <cmath>
 #include <mpi.h>
 
-const float eps = 1E-6; 
-const int n0 = 10000;
+#if 1
+const double PI = 3.14159265358979323846;
+const int n = 10 * 1000000;
+const double time_ = 0.610291868000;
+#else
+const double PI = 3.14159265358979323846;
+const int n = 100 * 1000000;
+const double time_ = 6.092084578000;
+#endif
 
-const float a = 0.1f;
-const float b = 1.0f;
-
-float func (float x)
+double getrand(unsigned int *seed)
 {
-    return log(1 + x) / x;
+        return (double)rand_r(seed) / RAND_MAX;
+}
+
+float func (float x, float y)
+{
+    return exp(x + y) * exp(x + y);
 }
 
 int main(int argc, char **argv)
 {
-    int commsize, rank;
     MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &commsize);
+    int rank, commsize;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    int n = n0, k;
-    double sq[2], delta = 1;
+    MPI_Comm_size(MPI_COMM_WORLD, &commsize);
 
-    for (k = 0; delta > eps; n *= 2, k ^= 1) {
-        int points_per_proc = n / commsize;
-        double h = (b - a) / n;
-        double s = 0.0;
-
-        for (int i = rank; i <= n; i += commsize)
-            s += func(a + h * (i + 0.5));
-        MPI_Allreduce(&s, &sq[k], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        sq[k] *= h;
-        if (n > n0)
-            delta = fabs(sq[k] - sq[k ^ 1]) / 3.0;
+    double t = MPI_Wtime();
+    unsigned int seed = static_cast<unsigned int>(rank);
+    int in = 0;
+    double s = 0;
+    for (int i = rank; i < n; i += commsize) {
+        double x = getrand(&seed);
+        double y = getrand(&seed);
+        if (y <= fabs(1 - x)) {
+            in++;
+            s += func(x, y);
+        }
     }
 
-    if (rank == 0) 
-        printf("Result Pi: %.12f; Runge rule: EPS %e, n %d\n", sq[k] * sq[k], eps, n / 2);
+    int gin = 0;
+    MPI_Reduce(&in, &gin, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    double gsum = 0.0;
+    MPI_Reduce(&s, &gsum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (rank == 0)
+        printf("%.12f\n", time_ / (MPI_Wtime() - t));
 
     MPI_Finalize();
-    
+
     return 0;
 }
