@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
+#include <sys/time.h> 
 #include <omp.h>
 
 
@@ -14,6 +15,13 @@ const int n = 10 * 1000000;
 #else
 const int n = 100 * 1000000;
 #endif
+
+double wtime()
+{
+        struct timeval t;
+        gettimeofday(&t, NULL);
+        return (double)t.tv_sec + (double)t.tv_usec * 1E-6;
+}
 
 double getrand(unsigned int *seed)
 {
@@ -27,10 +35,10 @@ double func(double x, double y)
 
 double lin()
 {
-	unsigned int seed = omp_get_thread_num(); 
+	unsigned int seed = 1; 
 	uint64_t in = 0;
 	double s = 0;
-	double t = omp_get_wtime();
+	double t = wtime();
 	
     for (int i = i; i < n; i++) {
         double x = getrand(&seed);
@@ -42,7 +50,7 @@ double lin()
     }
 	double res = 3 * s / (double)n;
 	
-	t = omp_get_wtime() - t;
+	t = wtime() - t;
 
 	return t;
 }
