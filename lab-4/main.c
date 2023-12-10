@@ -46,8 +46,7 @@ int main(int argc, char *argv[])
     int px = dims[0];
     int py = dims[1];
     if (px < 2 || py < 2) {
-        fprintf(stderr, "Invalid number of processes %d: px %d and py %d must be greater than 1\n",
-        commsize, px, py);
+        fprintf(stderr, "Invalid number of processes %d: px %d and py %d must be greater than 1\n", commsize, px, py);
         MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
     }
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periodic, 0, &cartcomm);
@@ -59,18 +58,18 @@ int main(int argc, char *argv[])
 
     // Broadcast command line arguments
     if (rank == 0) {
-    rows = (argc > 1) ? atoi(argv[1]) : py * 100;
-    cols = (argc > 2) ? atoi(argv[2]) : px * 100;
-    if (rows < py) {
-        fprintf(stderr, "Number of rows %d less then number of py processes %d\n", rows, py);
-        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
-    }
-    if (cols < px) {
-        fprintf(stderr, "Number of cols %d less then number of px processes %d\n", cols, px);
-        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
-    }
-        int args[2] = {rows, cols};
-        MPI_Bcast(&args, NELEMS(args), MPI_INT, 0, MPI_COMM_WORLD);
+        rows = (argc > 1) ? atoi(argv[1]) : py * 100;
+        cols = (argc > 2) ? atoi(argv[2]) : px * 100;
+        if (rows < py) {
+            fprintf(stderr, "Number of rows %d less then number of py processes %d\n", rows, py);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        }
+        if (cols < px) {
+            fprintf(stderr, "Number of cols %d less then number of px processes %d\n", cols, px);
+            MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+        }
+            int args[2] = {rows, cols};
+            MPI_Bcast(&args, NELEMS(args), MPI_INT, 0, MPI_COMM_WORLD);
     } else {
         int args[2];
         MPI_Bcast(&args, NELEMS(args), MPI_INT, 0, MPI_COMM_WORLD);
@@ -81,8 +80,8 @@ int main(int argc, char *argv[])
     // Allocate memory for local 2D subgrids with halo cells [0..ny + 1][0..nx + 1]
     int ny = get_block_size(rows, ranky, py);
     int nx = get_block_size(cols, rankx, px);
-    double *local_grid = calloc((ny + 2) * (nx + 2), sizeof(*local_grid));
-    double *local_newgrid = calloc((ny + 2) * (nx + 2), sizeof(*local_newgrid));
+    double *local_grid = (double*)calloc((ny + 2) * (nx + 2), sizeof(*local_grid));
+    double *local_newgrid = (double*)calloc((ny + 2) * (nx + 2), sizeof(*local_newgrid));
     // Fill boundary points:
     // - left and right borders are zero filled
     // - top border: u(x, 0) = sin(pi * x)
@@ -90,22 +89,22 @@ int main(int argc, char *argv[])
     double dx = 1.0 / (cols - 1.0);
     int sj = get_sum_of_prev_blocks(cols, rankx, px);
     if (ranky == 0) {
-    // Initialize top border: u(x, 0) = sin(pi * x)
-    for (int j = 1; j <= nx; j++) {
-    // Translate col index to x coord in [0, 1]
-    double x = dx * (sj + j - 1);
-    int ind = IND(0, j);
-    local_newgrid[ind] = local_grid[ind] = sin(PI * x);
-    }
+        // Initialize top border: u(x, 0) = sin(pi * x)
+        for (int j = 1; j <= nx; j++) {
+            // Translate col index to x coord in [0, 1]
+            double x = dx * (sj + j - 1);
+            int ind = IND(0, j);
+            local_newgrid[ind] = local_grid[ind] = sin(PI * x);
+        }
     }
     if (ranky == py - 1) {
-    // Initialize bottom border: u(x, 1) = sin(pi * x) * exp(-pi)
-    for (int j = 1; j <= nx; j++) {
-    // Translate col index to x coord in [0, 1]
-    double x = dx * (sj + j - 1);
-    int ind = IND(ny + 1, j);
-    local_newgrid[ind] = local_grid[ind] = sin(PI * x) * exp(-PI);
-    }
+        // Initialize bottom border: u(x, 1) = sin(pi * x) * exp(-pi)
+        for (int j = 1; j <= nx; j++) {
+            // Translate col index to x coord in [0, 1]
+            double x = dx * (sj + j - 1);
+            int ind = IND(ny + 1, j);
+            local_newgrid[ind] = local_grid[ind] = sin(PI * x) * exp(-PI);
+        }
     }
     // Neighbours
     int left, right, top, bottom;
@@ -127,19 +126,19 @@ int main(int argc, char *argv[])
         niters++;
         // Update interior points
         for (int i = 1; i <= ny; i++) {
-        for (int j = 1; j <= nx; j++) {
-        local_newgrid[IND(i, j)] =
-        (local_grid[IND(i - 1, j)] + local_grid[IND(i + 1, j)] +
-        local_grid[IND(i, j - 1)] + local_grid[IND(i, j + 1)]) * 0.25;
-        }
+            for (int j = 1; j <= nx; j++) {
+                local_newgrid[IND(i, j)] =
+                (local_grid[IND(i - 1, j)] + local_grid[IND(i + 1, j)] +
+                local_grid[IND(i, j - 1)] + local_grid[IND(i, j + 1)]) * 0.25;
+            }
         }
         // Check termination condition
         double maxdiff = 0;
         for (int i = 1; i <= ny; i++) {
-        for (int j = 1; j <= nx; j++) {
-        int ind = IND(i, j);
-        maxdiff = fmax(maxdiff, fabs(local_grid[ind] - local_newgrid[ind]));
-        }
+            for (int j = 1; j <= nx; j++) {
+                int ind = IND(i, j);
+                maxdiff = fmax(maxdiff, fabs(local_grid[ind] - local_newgrid[ind]));
+            }
         }
         // Swap grids (after termination local_grid will contain result)
         double *p = local_grid;
