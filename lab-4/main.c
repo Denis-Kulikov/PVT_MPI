@@ -106,6 +106,8 @@ int main(int argc, char *argv[])
             local_newgrid[ind] = local_grid[ind] = sin(PI * x) * exp(-PI);
         }
     }
+
+
     // Neighbours
     int left, right, top, bottom;
     MPI_Cart_shift(cartcomm, 0, 1, &left, &right);
@@ -140,6 +142,8 @@ int main(int argc, char *argv[])
                 maxdiff = fmax(maxdiff, fabs(local_grid[ind] - local_newgrid[ind]));
             }
         }
+
+
         // Swap grids (after termination local_grid will contain result)
         double *p = local_grid;
         local_grid = local_newgrid;
@@ -151,35 +155,40 @@ int main(int argc, char *argv[])
             break;
         // Halo exchange: T = 4 * (a + b * (rows / py)) + 4 * (a + b * (cols / px))
         thalo -= MPI_Wtime();
-        MPI_Irecv(&local_grid[IND(0, 1)], 1, row, top, 0, cartcomm, &reqs[0]); // top
-        MPI_Irecv(&local_grid[IND(ny + 1, 1)], 1, row, bottom, 0, cartcomm, &reqs[1]); // bottom
-        MPI_Irecv(&local_grid[IND(1, 0)], 1, col, left, 0, cartcomm, &reqs[2]); // left
-        MPI_Irecv(&local_grid[IND(1, nx + 1)], 1, col, right, 0, cartcomm, &reqs[3]); // right
-        MPI_Isend(&local_grid[IND(1, 1)], 1, row, top, 0, cartcomm, &reqs[4]); // top
-        MPI_Isend(&local_grid[IND(ny, 1)], 1, row, bottom, 0, cartcomm, &reqs[5]); // bottom
-        MPI_Isend(&local_grid[IND(1, 1)], 1, col, left, 0, cartcomm, &reqs[6]); // left
-        MPI_Isend(&local_grid[IND(1, nx)], 1, col, right, 0, cartcomm, &reqs[7]); // right
+        MPI_Irecv(&local_grid[IND(0, 1)],       1, row, top, 0, cartcomm, &reqs[0]);    // top
+        MPI_Irecv(&local_grid[IND(ny + 1, 1)],  1, row, bottom, 0, cartcomm, &reqs[1]); // bottom
+        MPI_Irecv(&local_grid[IND(1, 0)],       1, col, left, 0, cartcomm, &reqs[2]);   // left
+        MPI_Irecv(&local_grid[IND(1, nx + 1)],  1, col, right, 0, cartcomm, &reqs[3]);  // right
+        MPI_Isend(&local_grid[IND(1, 1)],       1, row, top, 0, cartcomm, &reqs[4]);    // top
+        MPI_Isend(&local_grid[IND(ny, 1)],      1, row, bottom, 0, cartcomm, &reqs[5]); // bottom
+        MPI_Isend(&local_grid[IND(1, 1)],       1, col, left, 0, cartcomm, &reqs[6]);   // left
+        MPI_Isend(&local_grid[IND(1, nx)],      1, col, right, 0, cartcomm, &reqs[7]);  // right
         MPI_Waitall(8, reqs, MPI_STATUS_IGNORE);
         thalo += MPI_Wtime();
     } // iterations
+
+
     MPI_Type_free(&row);
     MPI_Type_free(&col);
     free(local_newgrid);
     free(local_grid);
     ttotal += MPI_Wtime();
+
     if (rank == 0)
         printf("# Heat 2D (mpi): grid: rows %d, cols %d, procs %d (px %d, py %d)\n", rows, cols, commsize, px, py);
+
     int namelen;
     char procname[MPI_MAX_PROCESSOR_NAME];
     MPI_Get_processor_name(procname, &namelen);
     printf("# P %4d (%2d, %2d) on %s: grid ny %d nx %d, total %.6f, mpi %.6f (%.2f) = allred %.6f (%.2f) + halo %.6f (%.2f)\n",
     rank, rankx, ranky, procname, ny, nx, ttotal, treduce + thalo, (treduce + thalo) / ttotal,
     treduce, treduce / (treduce + thalo), thalo, thalo / (treduce + thalo));
+
     double prof[3] = {ttotal, treduce, thalo};
     if (rank == 0) {
         MPI_Reduce(MPI_IN_PLACE, prof, NELEMS(prof), MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
         printf("# procs %d : grid %d %d : niters %d : total time %.6f : mpi time %.6f : allred %.6f : halo %.6f\n",
-    commsize, rows, cols, niters, prof[0], prof[1] + prof[2], prof[1], prof[2]);
+                commsize, rows, cols, niters, prof[0], prof[1] + prof[2], prof[1], prof[2]);
     } else {
         MPI_Reduce(prof, NULL, NELEMS(prof), MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     }
