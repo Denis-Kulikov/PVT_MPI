@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/time.h>
 #include <mpi.h>
 
 double wtime()
@@ -69,7 +70,7 @@ void dgemv(double *a, double *b, double *c, int m, int n)
 int main (int argv, char *argc[])
 {
     int rank, commsize;
-    MPI_Init(argv, argc);
+    MPI_Init(&argv, &argc);
     MPI_Comm_size(MPI_COMM_WORLD, &commsize);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     double t = MPI_Wtime();
