@@ -71,12 +71,13 @@ int main (int argv, char *argc[])
 {
     int rank, commsize;
     MPI_Init(&argv, &argc);
+    double t = -wtime();
     MPI_Comm_size(MPI_COMM_WORLD, &commsize);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    double t = MPI_Wtime();
 
-    int n = 100;
-    int m = 100;
+    // int n = 16000;
+    int n = 32000;
+    int m = n;
     int lb, ub;
     get_chunk(0, m - 1, commsize, rank, &lb, &ub);
     int nrows = ub - lb + 1;
@@ -91,23 +92,27 @@ int main (int argv, char *argc[])
     }
     for (int j = 0; j < n; j++)
         b[j] = j + 1;
+        
     dgemv(a, b, c, m, n);
-    t = wtime() - t;
+    t += wtime();
 
     if (rank == 0) {
-    // Validation
-    for (int i = 0; i < m; i++) {
-        double r = (i + 1) * (n / 2.0 + pow(n, 2) / 2.0);
-        if (fabs(c[i] - r) > 1E-6) {
-            fprintf(stderr, "Validation failed: elem %d = %f (real value %f)\n", i, c[i], r);
-            break;
+        // Validation
+        for (int i = 0; i < m; i++) {
+            double r = (i + 1) * (n / 2.0 + pow(n, 2) / 2.0);
+            if (fabs(c[i] - r) > 1E-6) {
+                fprintf(stderr, "Validation failed: elem %d = %f (real value %f)\n", i, c[i], r);
+                break;
+            }
         }
-    }
-        printf("DGEMV: matrix-vector product (c[m] = a[m, n] * b[n]; m = %d, n = %d)\n", m, n);
-        // printf("Memory used: %" PRIu64 " MiB\n", (uint64_t)(((double)m * n + m + n) * sizeof(double)) >> 20);
-        double gflop = 2.0 * m * n * 1E-9;
-        printf("Elapsed time (%d procs): %.6f sec.\n", commsize, t);
-        printf("Performance: %.2f GFLOPS\n", gflop / t);
+
+        printf("Time:\t%f\n", t);
+
+        // printf("DGEMV: matrix-vector product (c[m] = a[m, n] * b[n]; m = %d, n = %d)\n", m, n);
+        // // printf("Memory used: %" PRIu64 " MiB\n", (uint64_t)(((double)m * n + m + n) * sizeof(double)) >> 20);
+        // double gflop = 2.0 * m * n * 1E-9;
+        // printf("Elapsed time (%d procs): %.6f sec.\n", commsize, t);
+        // printf("Performance: %.2f GFLOPS\n", gflop / t);
     }
 
     free(a);

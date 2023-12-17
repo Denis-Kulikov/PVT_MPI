@@ -5,6 +5,8 @@
 #include <math.h>
 #include <mpi.h>
 
+int size = 500;
+
 double wtime()
 {
     struct timeval t;
@@ -15,6 +17,7 @@ double wtime()
 #define EPS 0.001
 #define PI 3.14159265358979323846
 #define NELEMS(x) (sizeof((x)) / sizeof((x)[0]))
+#define IND_SERIAL(i, j) ((i) * nx + (j))
 #define IND(i, j) ((i) * (nx + 2) + (j))
 
 int get_block_size(int n, int rank, int nprocs)
@@ -30,6 +33,62 @@ int get_sum_of_prev_blocks(int n, int rank, int nprocs)
     int rem = n % nprocs;
     return n / nprocs * rank + ((rank >= rem) ? rem : rank);
 }
+
+double serial(int px, int py)
+{
+    int rows = 100 * py;
+    int cols = size * px;
+    int ny = rows;
+    int nx = cols;
+    double ttotal = -MPI_Wtime();
+    double *local_grid = calloc(ny * nx, sizeof(*local_grid));
+    double *local_newgrid = calloc(ny * nx, sizeof(*local_newgrid));
+    double dx = 1.0 / (nx - 1.0);
+    // Initialize top border: u(x, 0) = sin(pi * x)
+    for (int j = 0; j < nx; j++) {
+        int ind = IND_SERIAL(0, j);
+        local_newgrid[ind] = local_grid[ind] = sin(PI * dx * j);
+    }
+    // Initialize bottom border: u(x, 1) = sin(pi * x) * exp(-pi)
+    for (int j = 0; j < nx; j++) {
+        int ind = IND_SERIAL(ny - 1, j);
+        local_newgrid[ind] = local_grid[ind] = sin(PI * dx * j) * exp(-PI);
+    }
+
+    int niters = 0;
+    for (;;) {
+        niters++;
+        for (int i = 1; i < ny - 1; i++) { // Update interior points
+            for (int j = 1; j < nx - 1; j++) {
+                local_newgrid[IND_SERIAL(i, j)] =
+                    (local_grid[IND_SERIAL(i - 1, j)] + local_grid[IND_SERIAL(i + 1, j)] +
+                    local_grid[IND_SERIAL(i, j - 1)] + local_grid[IND_SERIAL(i, j + 1)]) * 0.25;
+            }
+        }
+        // Check termination condition
+        double maxdiff = 0;
+        for (int i = 1; i < ny - 1; i++) {
+            for (int j = 1; j < nx - 1; j++) {
+                int ind = IND_SERIAL(i, j);
+                maxdiff = fmax(maxdiff, fabs(local_grid[ind] - local_newgrid[ind]));
+            }
+        }
+        // Swap grids (after termination local_grid will contain result)
+        double *p = local_grid;
+        local_grid = local_newgrid;
+        local_newgrid = p;
+        if (maxdiff < EPS)
+            break;
+    }
+
+    ttotal += MPI_Wtime();
+
+    free(local_grid);
+    free(local_newgrid);
+
+    return ttotal;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -58,8 +117,8 @@ int main(int argc, char *argv[])
 
     // Broadcast command line arguments
     if (rank == 0) {
-        rows = (argc > 1) ? atoi(argv[1]) : py * 100;
-        cols = (argc > 2) ? atoi(argv[2]) : px * 100;
+        rows = (argc > 1) ? atoi(argv[1]) : 100 * size;
+        cols = (argc > 2) ? atoi(argv[2]) : px * size;
         if (rows < py) {
             fprintf(stderr, "Number of rows %d less then number of py processes %d\n", rows, py);
             MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
@@ -173,25 +232,31 @@ int main(int argc, char *argv[])
     free(local_newgrid);
     free(local_grid);
     ttotal += MPI_Wtime();
+    double t_serial = serial(px, py);
 
-    if (rank == 0)
-        printf("# Heat 2D (mpi): grid: rows %d, cols %d, procs %d (px %d, py %d)\n", rows, cols, commsize, px, py);
-
-    int namelen;
-    char procname[MPI_MAX_PROCESSOR_NAME];
-    MPI_Get_processor_name(procname, &namelen);
-    printf("# P %4d (%2d, %2d) on %s: grid ny %d nx %d, total %.6f, mpi %.6f (%.2f) = allred %.6f (%.2f) + halo %.6f (%.2f)\n",
-    rank, rankx, ranky, procname, ny, nx, ttotal, treduce + thalo, (treduce + thalo) / ttotal,
-    treduce, treduce / (treduce + thalo), thalo, thalo / (treduce + thalo));
-
-    double prof[3] = {ttotal, treduce, thalo};
     if (rank == 0) {
-        MPI_Reduce(MPI_IN_PLACE, prof, NELEMS(prof), MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-        printf("# procs %d : grid %d %d : niters %d : total time %.6f : mpi time %.6f : allred %.6f : halo %.6f\n",
-                commsize, rows, cols, niters, prof[0], prof[1] + prof[2], prof[1], prof[2]);
-    } else {
-        MPI_Reduce(prof, NULL, NELEMS(prof), MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        printf("%f\n", t_serial / ttotal);
+        printf("%f\t%f\n", t_serial, ttotal);
     }
+
+    // if (rank == 0)
+    //     printf("# Heat 2D (mpi): grid: rows %d, cols %d, procs %d (px %d, py %d)\n", rows, cols, commsize, px, py);
+
+    // int namelen;
+    // char procname[MPI_MAX_PROCESSOR_NAME];
+    // MPI_Get_processor_name(procname, &namelen);
+    // printf("# P %4d (%2d, %2d) on %s: grid ny %d nx %d, total %.6f, mpi %.6f (%.2f) = allred %.6f (%.2f) + halo %.6f (%.2f)\n",
+    // rank, rankx, ranky, procname, ny, nx, ttotal, treduce + thalo, (treduce + thalo) / ttotal,
+    // treduce, treduce / (treduce + thalo), thalo, thalo / (treduce + thalo));
+
+    // double prof[3] = {ttotal, treduce, thalo};
+    // if (rank == 0) {
+    //     MPI_Reduce(MPI_IN_PLACE, prof, NELEMS(prof), MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    //     printf("# procs %d : grid %d %d : niters %d : total time %.6f : mpi time %.6f : allred %.6f : halo %.6f\n",
+    //             commsize, rows, cols, niters, prof[0], prof[1] + prof[2], prof[1], prof[2]);
+    // } else {
+    //     MPI_Reduce(prof, NULL, NELEMS(prof), MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    // }
 
     MPI_Finalize();
 
